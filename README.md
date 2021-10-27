@@ -1,5 +1,9 @@
 # flutter-optimizing-note
 
+## 기본
+
+적어도 `GetX`같은 상태 관리자를 사용하면 아래 서술한 문제들을 자연스럽게 피할 수 있다.
+
 ## 자주겪는 문제
 
 ### function-call to stateless-widget
