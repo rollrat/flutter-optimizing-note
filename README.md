@@ -75,6 +75,7 @@
 하지만 상태가 변하여 `build`가 다시 호출될 경우, 플러터는 기존 위젯 트리와 현재의 위젯 트리를 비교하여 다른 부분 `diff`를 찾는다.
 함수에 의해 생성된 위젯 서브 트리의 경우 위젯 트리의 추적을 받지 못하여 플러터의 렌더러는 함수에 의해 생성된 위젯을 다시 그리게된다.
 이 문제를 해결하기 위해선 `Widget` 클래스를 사용하는 방법이 있다. `StatelessWidget` 이나 `StatefulWidget`을 사용하면 된다.
+`Dart Plugin(VSCode, Intellij)`에서 지원하는 `Extract Widget`이나 `Extract Method`를 이용하자.
 
 ## 최적화 테크닉
 
@@ -88,69 +89,17 @@
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final height =
-        MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top;
-    final mediaQuery = MediaQuery.of(context);
-    
-    // final list = buildList();
-
+  
     if (_cachedList == null || _shouldReload) {
       final list = buildList();
       _shouldReload = false;
       _cachedList = list;
     }
 
-    return Padding(
-      // padding: EdgeInsets.all(0),
-      padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top,
-          bottom: (mediaQuery.padding + mediaQuery.viewInsets).bottom),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: <Widget>[
-          Card(
-            elevation: 5,
-            color:
-                Settings.themeWhat ? Color(0xFF353535) : Colors.grey.shade100,
-            child: SizedBox(
-              width: width - 16,
-              height: height -
-                  16 -
-                  (mediaQuery.padding + mediaQuery.viewInsets).bottom,
-              child: Container(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(0, 0, 0, 0),
-                  child: CustomScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    slivers: <Widget>[
-                      SliverPersistentHeader(
-                        floating: true,
-                        delegate: AnimatedOpacitySliver(
-                          minExtent: 64 + 12.0,
-                          maxExtent: 64.0 + 12,
-                          searchBar: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8.0),
-                            child: Stack(
-                              children: <Widget>[
-                                _align(),
-                                _title(),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      buildList()
-                      _cachedList
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: _cachedList
     );
   }
 ```
@@ -173,6 +122,53 @@
 
 이 부분에서 buildList 함수를 `_shouldReload` 체커의 안쪽에 놓은 이유는 `build`가 짧은 시간에 여러번 호출될 경우,
 플러터 렌더러가 `buildList()`로 생성된 위젯을 다시 그리지는 않지만, 인스턴스 생성 오버헤드가 있기 때문이다.
+
+### 디바운스
+
+많은 데이터를 하나의 리스트에서 보여주는 경우를 가정해보자.
+이때 사용자가 스크롤을 빠르게 한다면 스크롤을 시작한 부분부터 스크롤이 끝난 부분까지의 모든 위젯들이 초기화된다.
+즉 `initState`가 호출되며 `initState`에 비싼 로직이 있는 경우 문제가 될 수 있다.
+`DebounceWidget`은 그 문제를 일부 해결한다.
+
+```dart
+import 'package:flutter/material.dart';
+
+class DebounceWidget extends StatefulWidget {
+  final Widget child;
+  final Widget? loadingWidget;
+
+  const DebounceWidget({Key? key, required this.child, this.loadingWidget})
+      : super(key: key);
+
+  @override
+  State<DebounceWidget> createState() => _DebounceWidgetState();
+}
+
+class _DebounceWidgetState extends State<DebounceWidget> {
+  bool isLoaded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoaded) return widget.child;
+
+    return FutureBuilder(
+      future:
+          Future.delayed(const Duration(milliseconds: 300)).then((value) => 1),
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          isLoaded = true;
+          return widget.child;
+        }
+        return widget.loadingWidget ?? Container();
+      },
+    );
+  }
+}
+```
+
+동작 원리는 아주 간단한데, `DebounceWidget`이 렌더링되는 시점에서
+`ListView`의 `cache` 및 `ui virtualization`정책에 의해 설정된 범위에 벗어난 `Widget`들은 모두 렌더링이 퍼징된다.
+따라서 `FutureBuilder`의 `builder`는 호출되기 전에 작업이 취소된다.
 
 ## 주제들
 
